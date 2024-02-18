@@ -2243,3 +2243,194 @@ func TestReentrant(t *testing.T) {
 		}
 	}
 }
+
+func Test11218174(t *testing.T) {
+	cm, err := buildMatrixCauchy(252, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm = cm[252:]
+
+	n, k := 7, 4
+	sn, sk := 5, 2
+
+	// Build merged matrix
+	m, _ := newMatrix(n, k)
+	for i := 0; i < k; i++ {
+		m[i][i] = 1
+	}
+	for i := 0; i < k; i++ {
+		m[k][i] = 1
+	}
+	for i := 0; i < n-k-1; i++ {
+		for j := 0; j < k; j++ {
+			m[k+1+i][j] = cm[i][j]
+		}
+	}
+	singularSubMatrix, err := findSingularSubMatrix(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if singularSubMatrix != nil {
+		t.Fatalf("matrix %s has singular sub-matrix %s", m, singularSubMatrix)
+	}
+	t.Logf("%s", m)
+
+	// Build left sub-matrix
+	s1, _ := newMatrix(sn, sk)
+	for i := 0; i < sk; i++ {
+		s1[i][i] = 1
+	}
+	for i := 0; i < sk; i++ {
+		s1[sk][i] = 1
+	}
+	for i := 0; i < sn-sk-1; i++ {
+		for j := 0; j < sk; j++ {
+			s1[sk+1+i][j] = cm[i][j]
+		}
+	}
+	singularSubMatrix, err = findSingularSubMatrix(s1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if singularSubMatrix != nil {
+		t.Fatalf("matrix %s has singular sub-matrix %s", s1, singularSubMatrix)
+	}
+	t.Logf("%s", s1)
+	
+	// Build right sub-matrix
+	s2, _ := newMatrix(sn, sk)
+	for i := 0; i < sk; i++ {
+		s2[i][i] = 1
+	}
+	for i := 0; i < sk; i++ {
+		s2[sk][i] = 1
+	}
+	for i := 0; i < sn-sk-1; i++ {
+		for j := 0; j < sk; j++ {
+			s2[sk+1+i][j] = cm[i][j+sn-sk-1]
+		}
+	}
+	singularSubMatrix, err = findSingularSubMatrix(s2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if singularSubMatrix != nil {
+		t.Fatalf("matrix %s has singular sub-matrix %s", s2, singularSubMatrix)
+	}
+	t.Logf("%s", s2)
+
+	// Fill data
+	rng := rand.New(rand.NewSource(0xabadc0cac01a))
+
+	shards := make([][]byte, n)
+	for i := range shards {
+		shards[i] = make([]byte, 100)
+	}
+	for i := 0; i < k; i++ {
+		rng.Read(shards[i])
+	}
+
+	s1shards := make([][]byte, sn)
+	for i := range s1shards {
+		s1shards[i] = make([]byte, 100)
+	}
+	for i := 0; i < sk; i++ {
+		s1shards[i] = shards[i]
+	}
+
+	s2shards := make([][]byte, sn)
+	for i := range s2shards {
+		s2shards[i] = make([]byte, 100)
+	}
+	for i := 0; i < sk; i++ {
+		s2shards[i] = shards[i+sk]
+	}
+
+	r, err := New(k, n-k, WithCustomMatrix(m[k:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = r.Encode(shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := r.Verify(shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("Verification failed")
+	}
+
+	sr1, err := New(sk, sn-sk, WithCustomMatrix(s1[sk:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sr1.Encode(s1shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err = sr1.Verify(s1shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("Verification failed")
+	}
+
+	sr2, err := New(sk, sn-sk, WithCustomMatrix(s2[sk:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sr2.Encode(s2shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err = sr2.Verify(s2shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("Verification failed")
+	}
+
+	// Check shards equality.
+	if !bytes.Equal(shards[0], s1shards[0]) {
+		t.Fatal("shard bytes[0] do not match")
+	}
+	if !bytes.Equal(shards[1], s1shards[1]) {
+		t.Fatal("shard bytes[1] do not match")
+	}
+	if !bytes.Equal(shards[2], s2shards[0]) {
+		t.Fatal("shard bytes[2] do not match")
+	}
+	if !bytes.Equal(shards[3], s2shards[1]) {
+		t.Fatal("shard bytes[3] do not match")
+	}
+	// Check local parity equality.
+	buf := make([]byte, 100)
+	copy(buf, s1shards[0])
+	sliceXor(s1shards[1], buf, &defaultOptions)
+	sliceXor(s2shards[0], buf, &defaultOptions)
+	sliceXor(s2shards[1], buf, &defaultOptions)
+	if !bytes.Equal(shards[4], buf) {
+		t.Fatal("Local parity shard bytes[4] do not match")
+	}
+	copy(buf, s1shards[2])
+	sliceXor(s2shards[2], buf, &defaultOptions)
+	if !bytes.Equal(shards[4], buf) {
+		t.Fatal("Local parity shard bytes[4] do not match")
+	}
+	// Check global parity equality.
+	copy(buf, s1shards[3])
+	sliceXor(s2shards[3], buf, &defaultOptions)
+	if !bytes.Equal(shards[5], buf) {
+		t.Fatal("Global parity shard bytes[5] do not match")
+	}
+	copy(buf, s1shards[4])
+	sliceXor(s2shards[4], buf, &defaultOptions)
+	if !bytes.Equal(shards[6], buf) {
+		t.Fatal("Global parity shard bytes[6] do not match")
+	}
+}
