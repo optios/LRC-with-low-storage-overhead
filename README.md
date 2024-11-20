@@ -1,3 +1,12 @@
+# Locally-repairable erasure code with Cauchy matrix
+Patent: https://www.storagenewsletter.com/2022/02/10/naver-and-industry-university-cooperation-foundation-hanyang-university-erica-campus-assigned-patent/
+
+The idea of our patent is implemented by Google ("Optimal Cauchy LRC" in the Usenix ATC'23 paper: https://www.usenix.org/system/files/fast23-kadekodi.pdf)
+
+Our erasure code reduces storage overhead from 220% (fLRC(16, 10, 5)) to 181% (ours(24, 16, 7)) with the same recovery performance.
+
+Our erasure code is implemented based on the following Reed-Solomon code (written in Go).
+
 # Reed-Solomon
 [![Go Reference](https://pkg.go.dev/badge/github.com/klauspost/reedsolomon.svg)](https://pkg.go.dev/github.com/klauspost/reedsolomon) [![Go](https://github.com/klauspost/reedsolomon/actions/workflows/go.yml/badge.svg)](https://github.com/klauspost/reedsolomon/actions/workflows/go.yml)
 
